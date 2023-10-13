@@ -110,15 +110,15 @@ def make_dataloader(
         )
     rpkm *= 1_000_000 / sample_depths_sum
 
-    zero_tnf = tnf.sum(axis=1) == 0
-    smallest_index = _np.argmax(zero_tnf)
-    if zero_tnf[smallest_index]:
-        raise ValueError(
-            f"TNF row at index {smallest_index} is all zeros. "
-            + "This implies that the sequence contained no 4-mers of A, C, G, T or U, "
-            + "making this sequence uninformative. This is probably a mistake. "
-            + "Verify that the sequence contains usable information (e.g. is not all N's)"
-        )
+    # zero_tnf = tnf.sum(axis=1) == 0
+    # smallest_index = _np.argmax(zero_tnf)
+    # if zero_tnf[smallest_index]:
+    #     raise ValueError(
+    #         f"TNF row at index {smallest_index} is all zeros. "
+    #         + "This implies that the sequence contained no 4-mers of A, C, G, T or U, "
+    #         + "making this sequence uninformative. This is probably a mistake. "
+    #         + "Verify that the sequence contains usable information (e.g. is not all N's)"
+    #     )
 
     total_abundance = rpkm.sum(axis=1)
 
@@ -138,6 +138,14 @@ def make_dataloader(
 
     # Normalize CUB
     _vambtools.zscore(cub, axis=0, inplace=True)
+
+    # set all to zero to destroy the tnf matrix
+    tnf_shape = tnf.shape
+    tnf = _np.zeros(tnf_shape)
+
+    # also destroy the cub
+    cub_shape = cub.shape
+    cub = _np.zeros(cub_shape)
 
     # Create weights
     lengths = (lengths).astype(_np.float32)
