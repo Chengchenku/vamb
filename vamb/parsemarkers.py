@@ -193,7 +193,19 @@ class Markers:
         shutil.rmtree(tmpdir_to_create)
         markers = cls(marker_list, marker_names, refhash)
 
-        return markers
+        # Use the markers to create two dictionaries, one mapping contigs to its containing markers
+        # the other mapping markers to contigs it found in
+
+        contig_to_scgs = defaultdict(list)
+        scg_to_contigs = defaultdict(list)
+
+        for contig_id, marker_array in enumerate(markers.markers):
+            if marker_array is None:
+                for marker in marker_array:
+                    contig_to_scgs[contig_id].append(marker)
+                    scg_to_contigs[marker].append(contig_id)
+
+        return markers, contig_to_scgs, scg_to_contigs
 
 
 # Some markers have different names, but should be treated as the same SCG.

@@ -145,10 +145,13 @@ def make_dataloader(
     tnftensor = _torch.from_numpy(tnf)
     total_abundance_tensor = _torch.from_numpy(total_abundance)
     weightstensor = _torch.from_numpy(weights)
+    indicestensor = _torch.arange(depthstensor.size(0), dtype=_torch.long)
+
     n_workers = 4 if cuda else 1
     dataset = _TensorDataset(
-        depthstensor, tnftensor, total_abundance_tensor, weightstensor
+        depthstensor, tnftensor, total_abundance_tensor, weightstensor, indicestensor
     )
+
     dataloader = _DataLoader(
         dataset=dataset,
         batch_size=batchsize,
@@ -336,7 +339,8 @@ class VAE(_nn.Module):
         abundance_out: Tensor,
         mu: Tensor,
         weights: Tensor,
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+        cos_dist_batch: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         ab_sse = (abundance_out - abundance_in).pow(2).sum(dim=1)
         # Add 1e-9 to depths_out to avoid numerical instability.
         ce = -((depths_out + 1e-9).log() * depths_in).sum(dim=1)
@@ -351,6 +355,11 @@ class VAE(_nn.Module):
                 self.nsamples * _log(self.nsamples)
             )
 
+        # TODO: Find a better loss function for cosine distance
+        scgs_weight = 0.5 # Need to find a better weighting factor
+        weighted_scgs_loss = scgs_weight * cos_dist_batch.sum(axis=1)
+
+
         ab_sse_weight = (1 - self.alpha) * (1 / self.nsamples)
         sse_weight = self.alpha / self.ntnf
         kld_weight = 1 / (self.nlatent * self.beta)
@@ -359,7 +368,7 @@ class VAE(_nn.Module):
         weighed_sse = sse * sse_weight
         weighed_kld = kld * kld_weight
         reconstruction_loss = weighed_ce + weighed_ab + weighed_sse
-        loss = (reconstruction_loss + weighed_kld) * weights
+        loss = (reconstruction_loss + weighed_kld + weighted_scgs_loss) * weights
 
         return (
             loss.mean(),
@@ -367,6 +376,7 @@ class VAE(_nn.Module):
             weighed_ce.mean(),
             weighed_sse.mean(),
             weighed_kld.mean(),
+            weighted_scgs_loss.mean(),
         )
 
     def trainepoch(
@@ -376,6 +386,8 @@ class VAE(_nn.Module):
         optimizer,
         batchsteps: list[int],
         logfile,
+        contig_to_scgs,
+        scg_to_contigs,
     ) -> _DataLoader[tuple[Tensor, Tensor, Tensor]]:
         self.train()
 
@@ -384,11 +396,12 @@ class VAE(_nn.Module):
         epoch_sseloss = 0.0
         epoch_celoss = 0.0
         epoch_absseloss = 0.0
+        epoch_scgloss = 0.0
 
         if epoch in batchsteps:
             data_loader = set_batchsize(data_loader, data_loader.batch_size * 2)
 
-        for depths_in, tnf_in, abundance_in, weights in data_loader:
+        for depths_in, tnf_in, abundance_in, weights, indices in data_loader:
             depths_in.requires_grad = True
             tnf_in.requires_grad = True
             abundance_in.requires_grad = True
@@ -404,6 +417,47 @@ class VAE(_nn.Module):
                 depths_in, tnf_in, abundance_in
             )
 
+            # retrerive latent space position for each contig
+            latent_positions = mu.cpu().detach()
+
+            cos_dist_batch = []
+
+            # calculate cosine distances and identify close contigs with shared SCGs
+            for i, i_index in enumerate(indices):
+                contig_id = i_index.item()
+                contig_latent = latent_positions[i]
+                scgs = contig_to_scgs.get(contig_id, [])
+                cos_dist_contigs = []
+
+                for j, j_index in enumerate(indices):
+                    if i == j:
+                        continue # skip self
+                    
+                    other_contig_id = j_index.item()
+                    other_contig_latent = latent_positions[j]
+
+                    # check shared SCGs
+                    shared_scgs = scgs.intersection(contig_to_scgs.get(other_contig_id, []))
+                    if len(shared_scgs) == 0:
+                        continue
+
+                    # calculate cosine distance between contigs
+                    cos_dist = _torch.nn.functional.cosine_similarity(
+                        contig_latent.unsqueeze(0),
+                        other_contig_latent.unsqueeze(0),
+                        dim=0,
+                    )
+
+                    if cos_dist < 0.15:
+                        cos_dist_contigs.append(cos_dist)
+
+                if len(cos_dist_contigs) > 0:
+                    cos_dist_batch.append(cos_dist_contigs)
+                else:
+                    cos_dist_batch.append([0])
+
+            cos_dist_batch= _torch.tensor(cos_dist_batch)
+
             loss, ab_sse, ce, sse, kld = self.calc_loss(
                 depths_in,
                 depths_out,
@@ -413,6 +467,7 @@ class VAE(_nn.Module):
                 abundance_out,
                 mu,
                 weights,
+                cos_dist_batch,
             )
 
             loss.backward()
