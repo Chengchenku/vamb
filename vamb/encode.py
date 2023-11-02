@@ -458,7 +458,10 @@ class VAE(_nn.Module):
 
             cos_dist_batch= _torch.tensor(cos_dist_batch)
 
-            loss, ab_sse, ce, sse, kld = self.calc_loss(
+            if epoch < 10 :
+                cos_dist_batch = cos_dist_batch * 0
+
+            loss, ab_sse, ce, sse, kld, scgs_loss = self.calc_loss(
                 depths_in,
                 depths_out,
                 tnf_in,
@@ -478,6 +481,7 @@ class VAE(_nn.Module):
             epoch_sseloss += sse.data.item()
             epoch_celoss += ce.data.item()
             epoch_absseloss += ab_sse.data.item()
+            epoch_scgloss += scgs_loss.data.item()
 
         if logfile is not None:
             print(
@@ -489,6 +493,7 @@ class VAE(_nn.Module):
                     epoch_absseloss / len(data_loader),
                     epoch_sseloss / len(data_loader),
                     epoch_kldloss / len(data_loader),
+                    epoch_scgloss / len(data_loader),
                     data_loader.batch_size,
                 ),
                 file=logfile,
