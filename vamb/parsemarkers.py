@@ -18,6 +18,7 @@ import shutil
 from collections import defaultdict
 import json
 import numpy as np
+import re
 
 MarkerID = NewType("Marker", int)
 MarkerName = NewType("MarkerName", str)
@@ -205,7 +206,22 @@ class Markers:
                     contig_to_scgs[contig_id].append(marker)
                     scg_to_contigs[marker].append(contig_id)
 
-        return markers, contig_to_scgs, scg_to_contigs
+        # extract the contig names from the FASTA file, store the contig ids in the dictionary with the sample names as keys
+         
+        sample_to_contigs = defaultdict(list)
+
+        contig_id = 0
+        with open(contigs, "rb") as file:
+            for record in byte_iterfasta(file):
+                header = record.identifier
+                
+                match = re.match(r"S(\d+)(\D+)(\d+)", header)
+                if match:
+                    sample_id = "S" + match.group(1)
+                    sample_to_contigs[sample_id].append(contig_id)
+                    contig_id += 1
+                
+        return markers, contig_to_scgs, scg_to_contigs, sample_to_contigs
 
 
 # Some markers have different names, but should be treated as the same SCG.

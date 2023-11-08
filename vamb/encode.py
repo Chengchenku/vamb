@@ -173,6 +173,7 @@ class VAE(_nn.Module):
         nlatent: Number of neurons in the latent layer [32]
         alpha: Approximate starting TNF/(CE+TNF) ratio in loss. [None = Auto]
         beta: Multiply KLD by the inverse of this value [200]
+        gamma: Weighting factor for SCG loss [0.5]
         dropout: Probability of dropout on forward pass [0.2]
         cuda: Use CUDA (GPU accelerated training) [False]
 
@@ -193,6 +194,7 @@ class VAE(_nn.Module):
         nlatent: int = 32,
         alpha: Optional[float] = None,
         beta: float = 200.0,
+        gamma: float = 0.5, # weighting factor for SCG loss
         dropout: Optional[float] = 0.2,
         cuda: bool = False,
         seed: int = 0,
@@ -234,6 +236,7 @@ class VAE(_nn.Module):
         self.ntnf = 103
         self.alpha = alpha
         self.beta = beta
+        self.gamma = gamma
         self.nhiddens = nhiddens
         self.nlatent = nlatent
         self.dropout = dropout
@@ -355,10 +358,7 @@ class VAE(_nn.Module):
                 self.nsamples * _log(self.nsamples)
             )
 
-        # TODO: Find a better loss function for cosine distance
-        scgs_weight = 0.5 # Need to find a better weighting factor
-        weighted_scgs_loss = scgs_weight * cos_dist_batch.sum(axis=1)
-
+        weighted_scgs_loss = self.gamma * cos_dist_batch
 
         ab_sse_weight = (1 - self.alpha) * (1 / self.nsamples)
         sse_weight = self.alpha / self.ntnf
@@ -378,6 +378,56 @@ class VAE(_nn.Module):
             weighed_kld.mean(),
             weighted_scgs_loss.mean(),
         )
+    
+    def calc_scg_cos_dist(
+        self, 
+        mu,
+        indices,
+        contig_to_scgs,
+        epoch,
+        threshold = 0.15,
+        ) -> Tensor:
+
+        cos_dist_batch = _torch.zeros(len(indices), device=mu.device)
+
+        # calculate cosine distances and identify close contigs with shared SCGs
+        for i, contig_index in enumerate(indices):
+            contig_id = contig_index.item()
+            contig_latent = mu[i]
+            scgs = contig_to_scgs.get(contig_id, set())
+
+            nearest_scg = float("inf")
+
+            for j, j_index in enumerate(indices):
+                if i == j:
+                    continue # skip self
+                    
+                other_contig_id = j_index.item()
+                other_contig_latent = mu[j]
+
+                # check shared SCGs
+                shared_scgs = scgs.intersection(contig_to_scgs.get(other_contig_id, set()))
+                if len(shared_scgs) == 0:
+                    continue # skip if no shared SCGs
+
+                # calculate cosine distance between contigs
+                cos_sim = _torch.nn.functional.cosine_similarity(
+                    contig_latent.unsqueeze(0),
+                    other_contig_latent.unsqueeze(0),
+                    dim=0,
+                    )
+                
+                cos_dist = 1 - cos_sim
+
+                if cos_dist < nearest_scg and cos_dist < threshold:
+                    nearest_scg = cos_dist
+
+            cos_dist_batch[i] = nearest_scg if nearest_scg != float("inf") else 0
+
+        if epoch < 10 :
+            cos_dist_batch.fill_(0)
+
+        return cos_dist_batch
 
     def trainepoch(
         self,
@@ -417,49 +467,12 @@ class VAE(_nn.Module):
                 depths_in, tnf_in, abundance_in
             )
 
-            # retrerive latent space position for each contig
-            latent_positions = mu.cpu().detach()
-
-            cos_dist_batch = []
-
-            # calculate cosine distances and identify close contigs with shared SCGs
-            for i, i_index in enumerate(indices):
-                contig_id = i_index.item()
-                contig_latent = latent_positions[i]
-                scgs = contig_to_scgs.get(contig_id, [])
-                cos_dist_contigs = []
-
-                for j, j_index in enumerate(indices):
-                    if i == j:
-                        continue # skip self
-                    
-                    other_contig_id = j_index.item()
-                    other_contig_latent = latent_positions[j]
-
-                    # check shared SCGs
-                    shared_scgs = scgs.intersection(contig_to_scgs.get(other_contig_id, []))
-                    if len(shared_scgs) == 0:
-                        continue
-
-                    # calculate cosine distance between contigs
-                    cos_dist = _torch.nn.functional.cosine_similarity(
-                        contig_latent.unsqueeze(0),
-                        other_contig_latent.unsqueeze(0),
-                        dim=0,
-                    )
-
-                    if cos_dist < 0.15:
-                        cos_dist_contigs.append(cos_dist)
-
-                if len(cos_dist_contigs) > 0:
-                    cos_dist_batch.append(cos_dist_contigs)
-                else:
-                    cos_dist_batch.append([0])
-
-            cos_dist_batch= _torch.tensor(cos_dist_batch)
-
-            if epoch < 10 :
-                cos_dist_batch = cos_dist_batch * 0
+            cos_dist = self.calc_scg_cos_dist(
+                mu,
+                indices,
+                contig_to_scgs,
+                epoch,
+            )
 
             loss, ab_sse, ce, sse, kld, scgs_loss = self.calc_loss(
                 depths_in,
@@ -470,7 +483,7 @@ class VAE(_nn.Module):
                 abundance_out,
                 mu,
                 weights,
-                cos_dist_batch,
+                cos_dist,
             )
 
             loss.backward()
@@ -556,6 +569,7 @@ class VAE(_nn.Module):
             "nsamples": self.nsamples,
             "alpha": self.alpha,
             "beta": self.beta,
+            "gamma": self.gamma,
             "dropout": self.dropout,
             "nhiddens": self.nhiddens,
             "nlatent": self.nlatent,
@@ -585,12 +599,13 @@ class VAE(_nn.Module):
         nsamples = dictionary["nsamples"]
         alpha = dictionary["alpha"]
         beta = dictionary["beta"]
+        gamma = dictionary["gamma"]
         dropout = dictionary["dropout"]
         nhiddens = dictionary["nhiddens"]
         nlatent = dictionary["nlatent"]
         state = dictionary["state"]
 
-        vae = cls(nsamples, nhiddens, nlatent, alpha, beta, dropout, cuda)
+        vae = cls(nsamples, nhiddens, nlatent, alpha, beta, gamma, dropout, cuda)
         vae.load_state_dict(state)
 
         if cuda:
@@ -662,6 +677,7 @@ class VAE(_nn.Module):
             print("\tCUDA:", self.usecuda, file=logfile)
             print("\tAlpha:", self.alpha, file=logfile)
             print("\tBeta:", self.beta, file=logfile)
+            print("\tGamma:", self.gamma, file=logfile)
             print("\tDropout:", self.dropout, file=logfile)
             print("\tN hidden:", ", ".join(map(str, self.nhiddens)), file=logfile)
             print("\tN latent:", self.nlatent, file=logfile)
