@@ -384,6 +384,7 @@ class VAE(_nn.Module):
         mu,
         indices,
         contig_to_scgs,
+        contig_to_sample,
         epoch,
         threshold = 0.15,
         ) -> Tensor:
@@ -393,6 +394,9 @@ class VAE(_nn.Module):
         # calculate cosine distances and identify close contigs with shared SCGs
         for i, contig_index in enumerate(indices):
             contig_id = contig_index.item()
+
+            contig_sample_id = contig_to_sample.get(contig_id)
+
             contig_latent = mu[i]
             scgs = contig_to_scgs.get(contig_id, set())
 
@@ -403,6 +407,13 @@ class VAE(_nn.Module):
                     continue # skip self
                     
                 other_contig_id = j_index.item()
+
+                other_contig_sample_id = contig_to_sample.get(other_contig_id)
+
+                # skip if not from the same sample
+                if contig_sample_id != other_contig_sample_id:
+                    continue
+
                 other_contig_latent = mu[j]
 
                 # check shared SCGs
@@ -419,6 +430,7 @@ class VAE(_nn.Module):
                 
                 cos_dist = 1 - cos_sim
 
+                # only consider the nearest SCG below the threshold
                 if cos_dist < nearest_scg and cos_dist < threshold:
                     nearest_scg = cos_dist
 

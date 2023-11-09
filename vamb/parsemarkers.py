@@ -208,7 +208,7 @@ class Markers:
 
         # extract the contig names from the FASTA file, store the contig ids in the dictionary with the sample names as keys
          
-        sample_to_contigs = defaultdict(list)
+        contig_to_sample = defaultdict()
 
         contig_id = 0
         with open(contigs, "rb") as file:
@@ -218,10 +218,10 @@ class Markers:
                 match = re.match(r"S(\d+)(\D+)(\d+)", header)
                 if match:
                     sample_id = "S" + match.group(1)
-                    sample_to_contigs[sample_id].append(contig_id)
+                    contig_to_sample[contig_id] = sample_id
                     contig_id += 1
                 
-        return markers, contig_to_scgs, scg_to_contigs, sample_to_contigs
+        return markers, contig_to_scgs, scg_to_contigs, contig_to_sample
 
 
 # Some markers have different names, but should be treated as the same SCG.
