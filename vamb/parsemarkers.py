@@ -199,7 +199,7 @@ class Markers:
         contig_to_scgs = defaultdict(list)
 
         for contig_id, marker_array in enumerate(markers.markers):
-            if marker_array is None:
+            if marker_array is not None:
                 for marker in marker_array:
                     contig_to_scgs[contig_id].append(marker)
 
