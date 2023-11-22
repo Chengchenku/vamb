@@ -194,34 +194,29 @@ class Markers:
         shutil.rmtree(tmpdir_to_create)
         markers = cls(marker_list, marker_names, refhash)
 
-        # Use the markers to create two dictionaries, one mapping contigs to its containing markers
-        # the other mapping markers to contigs it found in
+        # Use the markers to create one dictionary, one mapping contigs to its containing markers
 
         contig_to_scgs = defaultdict(list)
-        scg_to_contigs = defaultdict(list)
 
         for contig_id, marker_array in enumerate(markers.markers):
             if marker_array is None:
                 for marker in marker_array:
                     contig_to_scgs[contig_id].append(marker)
-                    scg_to_contigs[marker].append(contig_id)
 
         # extract the contig names from the FASTA file, store the contig ids in the dictionary with the sample names as keys
-         
-        contig_to_sample = defaultdict()
+        
+        contig_to_sample = []
 
-        contig_id = 0
         with open(contigs, "rb") as file:
             for record in byte_iterfasta(file):
-                header = record.identifier
-                
+                header = record.identifier          
+                # Extract the sample ID from the header
                 match = re.match(r"S(\d+)(\D+)(\d+)", header)
                 if match:
-                    sample_id = "S" + match.group(1)
-                    contig_to_sample[contig_id] = sample_id
-                    contig_id += 1
-                
-        return markers, contig_to_scgs, scg_to_contigs, contig_to_sample
+                    sample_id_int = int(match.group(1))
+                    contig_to_sample.append(sample_id_int)
+
+        return markers, contig_to_scgs, contig_to_sample
 
 
 # Some markers have different names, but should be treated as the same SCG.

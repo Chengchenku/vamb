@@ -342,7 +342,7 @@ class VAE(_nn.Module):
         abundance_out: Tensor,
         mu: Tensor,
         weights: Tensor,
-        cos_dist_batch: Tensor,
+        cos_dist: Tensor,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         ab_sse = (abundance_out - abundance_in).pow(2).sum(dim=1)
         # Add 1e-9 to depths_out to avoid numerical instability.
@@ -358,7 +358,9 @@ class VAE(_nn.Module):
                 self.nsamples * _log(self.nsamples)
             )
 
-        weighted_scgs_loss = self.gamma * cos_dist_batch
+        # If two different contigs shared the same scgs and come from the same sample 
+        # and they are so close to each other, the loss will be huge
+        weighted_scgs_loss = self.gamma * (1 - cos_dist)
 
         ab_sse_weight = (1 - self.alpha) * (1 / self.nsamples)
         sse_weight = self.alpha / self.ntnf
@@ -380,66 +382,59 @@ class VAE(_nn.Module):
         )
     
     def calc_scg_cos_dist(
-        self, 
-        mu,
+        self,
+        last_global_mu, # new param: Last epoch mu - mu of all points # really need?
+        mu, # for this minibatch
         indices,
         contig_to_scgs,
         contig_to_sample,
         epoch,
         threshold = 0.15,
-        ) -> Tensor:
+    ) -> Tensor:
+        # If epoch < 10: return 0
 
-        cos_dist_batch = _torch.zeros(len(indices), device=mu.device)
+        # First you compute a matrix with the position of the nearest neighbor
+        # contig from the same sample, with a shared SCG, for each point in mu (for this batch)
+        # You can use loops and indexing in here
 
-        # calculate cosine distances and identify close contigs with shared SCGs
-        for i, contig_index in enumerate(indices):
-            contig_id = contig_index.item()
+        # THEN: Compute a loss using ONLY vectroized operations (no indicing [], no loops)
+        # otherwise no gradient.
+        # The loss should  be something like: Cosine similarity between mu and the nearest neighbor
+        # starting fromm 1.0 if similarity is 1.0, and going to 0 around 0.15
 
-            contig_sample_id = contig_to_sample.get(contig_id)
+        cos_dist = _torch.zeros(len(indices), device=mu.device)
 
-            contig_latent = mu[i]
-            scgs = contig_to_scgs.get(contig_id, set())
+        if epoch < 10:
+            return cos_dist
+        
 
-            nearest_scg = float("inf")
+        # create a mask for contigs with shared SCGs and contigs from the same sample
+        shared_scgs_mask = _torch.zeros((len(indices), len(indices)), device=mu.device, dtype=_torch.bool)
 
-            for j, j_index in enumerate(indices):
-                if i == j:
-                    continue # skip self
-                    
-                other_contig_id = j_index.item()
+        for i in range(len(indices)):
+            for j in range(len(indices)):
+                shared_scgs_mask[i, j] = len(contig_to_scgs[indices[i]].intersection(contig_to_scgs[indices[j]])) > 0
 
-                other_contig_sample_id = contig_to_sample.get(other_contig_id)
+        contig_to_sample_tensor = _torch.tensor(contig_to_sample)
+        same_sample_mask = contig_to_sample_tensor.unsqueeze(1) == contig_to_sample_tensor
 
-                # skip if not from the same sample
-                if contig_sample_id != other_contig_sample_id:
-                    continue
+        combined_mask = shared_scgs_mask & same_sample_mask
 
-                other_contig_latent = mu[j]
+        # Compute cosine similarity matrix
+        norm_mu = mu / mu.linalg.vector_norm(mu, dim=1, keepdim=True)
+        cos_sim_matrix = _torch.mm(norm_mu, norm_mu.transpose(0, 1))
 
-                # check shared SCGs
-                shared_scgs = scgs.intersection(contig_to_scgs.get(other_contig_id, set()))
-                if len(shared_scgs) == 0:
-                    continue # skip if no shared SCGs
+        cos_sim_matrix[~combined_mask] = 0
 
-                # calculate cosine distance between contigs
-                cos_sim = _torch.nn.functional.cosine_similarity(
-                    contig_latent.unsqueeze(0),
-                    other_contig_latent.unsqueeze(0),
-                    dim=0,
-                    )
-                
-                cos_dist = 1 - cos_sim
+        # excluding self-similarity
+        cos_sim_matrix.fill_diagonal_(0)
 
-                # only consider the nearest SCG below the threshold
-                if cos_dist < nearest_scg and cos_dist < threshold:
-                    nearest_scg = cos_dist
+        max_sim, _ = cos_sim_matrix.max(dim=1)
 
-            cos_dist_batch[i] = nearest_scg if nearest_scg != float("inf") else 0
+        cos_dist = 1 - max_sim
+        cos_dist[cos_dist > threshold] = 0
 
-        if epoch < 10 :
-            cos_dist_batch.fill_(0)
-
-        return cos_dist_batch
+        return cos_dist
 
     def trainepoch(
         self,
@@ -449,7 +444,7 @@ class VAE(_nn.Module):
         batchsteps: list[int],
         logfile,
         contig_to_scgs,
-        scg_to_contigs,
+        contig_to_sample,
     ) -> _DataLoader[tuple[Tensor, Tensor, Tensor]]:
         self.train()
 
@@ -483,6 +478,7 @@ class VAE(_nn.Module):
                 mu,
                 indices,
                 contig_to_scgs,
+                contig_to_sample,
                 epoch,
             )
 
