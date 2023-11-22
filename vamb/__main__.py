@@ -511,6 +511,8 @@ def trainvae(
     alpha: Optional[float],
     data_loader: DataLoader,
     logfile: IO[str],
+    contig_to_scgs,
+    contig_to_sample,
 ) -> np.ndarray:
     begintime = time.time()
     log("\nCreating and training VAE", logfile)
@@ -531,6 +533,8 @@ def trainvae(
     modelpath = vamb_options.out_dir.joinpath("model.pt")
     vae.trainmodel(
         vamb.encode.set_batchsize(data_loader, training_options.batchsize),
+        contig_to_scgs = contig_to_scgs,
+        contig_to_sample= contig_to_sample,
         nepochs=training_options.nepochs,
         lrate=lrate,
         batchsteps=training_options.batchsteps,

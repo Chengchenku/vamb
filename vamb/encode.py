@@ -424,9 +424,8 @@ class VAE(_nn.Module):
         norm_mu = mu / mu.linalg.vector_norm(mu, dim=1, keepdim=True)
         cos_sim_matrix = _torch.mm(norm_mu, norm_mu.transpose(0, 1))
 
+        # excluding invalid contig pairs and itself
         cos_sim_matrix[~combined_mask] = 0
-
-        # excluding self-similarity
         cos_sim_matrix.fill_diagonal_(0)
 
         max_sim, _ = cos_sim_matrix.max(dim=1)
@@ -627,6 +626,8 @@ class VAE(_nn.Module):
     def trainmodel(
         self,
         dataloader: _DataLoader[tuple[Tensor, Tensor, Tensor]],
+        contig_to_scgs,
+        contig_to_sample,
         nepochs: int = 500,
         lrate: float = 1e-3,
         batchsteps: Optional[list[int]] = [25, 75, 150, 300],
@@ -705,7 +706,7 @@ class VAE(_nn.Module):
         # Train
         for epoch in range(nepochs):
             dataloader = self.trainepoch(
-                dataloader, epoch, optimizer, sorted(batchsteps_set), logfile
+                dataloader, epoch, optimizer, sorted(batchsteps_set), logfile, contig_to_scgs, contig_to_sample
             )
 
         # Save weights - Lord forgive me, for I have sinned when catching all exceptions
