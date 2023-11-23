@@ -196,12 +196,10 @@ class Markers:
 
         # Use the markers to create one dictionary, one mapping contigs to its containing markers
 
-        contig_to_scgs = defaultdict(list)
+        contig_to_scgs = []
 
-        for contig_id, marker_array in enumerate(markers.markers):
-            if marker_array is not None:
-                for marker in marker_array:
-                    contig_to_scgs[contig_id].append(marker)
+        for marker in markers.markers:
+            contig_to_scgs.append(list(marker) if marker is not None else [])
 
         # extract the contig names from the FASTA file, store the contig ids in the dictionary with the sample names as keys
         
