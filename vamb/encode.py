@@ -358,9 +358,7 @@ class VAE(_nn.Module):
                 self.nsamples * _log(self.nsamples)
             )
 
-        # If two different contigs shared the same scgs and come from the same sample 
-        # and they are so close to each other, the loss will be huge
-        weighted_scgs_loss = self.gamma * (1 - cos_dist)
+        weighted_scgs_loss = self.gamma * cos_dist
 
         ab_sse_weight = (1 - self.alpha) * (1 / self.nsamples)
         sse_weight = self.alpha / self.ntnf
