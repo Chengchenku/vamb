@@ -424,7 +424,7 @@ class VAE(_nn.Module):
         combined_mask = shared_scgs_mask & same_sample_mask
 
         # Compute cosine similarity matrix
-        norm_mu = mu / mu.linalg.vector_norm(mu, dim=1, keepdim=True)
+        norm_mu = mu / _torch.linalg.vector_norm(mu, dim=1, keepdim=True)
         cos_sim_matrix = _torch.mm(norm_mu, norm_mu.transpose(0, 1))
 
         # excluding invalid contig pairs and itself
