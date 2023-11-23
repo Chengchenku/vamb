@@ -406,19 +406,20 @@ class VAE(_nn.Module):
 
         if epoch < 10:
             return cos_dist
-        
 
         # create a mask for contigs with shared SCGs and contigs from the same sample
         shared_scgs_mask = _torch.zeros((len(indices), len(indices)), device=mu.device, dtype=_torch.bool)
+        same_sample_mask = _torch.zeros((len(indices), len(indices)), device=mu.device, dtype=_torch.bool)
 
         for i in range(len(indices)):
             for j in range(len(indices)):
                 scgs_i = set(contig_to_scgs[indices[i]])
                 scgs_j = set(contig_to_scgs[indices[j]])
                 shared_scgs_mask[i, j] = len(scgs_i.intersection(scgs_j)) > 0
-                
-        contig_to_sample_tensor = _torch.tensor(contig_to_sample)
-        same_sample_mask = contig_to_sample_tensor.unsqueeze(1) == contig_to_sample_tensor
+
+                sample_i = contig_to_sample[indices[i]]
+                sample_j = contig_to_sample[indices[j]]
+                same_sample_mask[i, j] = sample_i == sample_j
 
         combined_mask = shared_scgs_mask & same_sample_mask
 
