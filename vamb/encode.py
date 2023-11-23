@@ -383,7 +383,7 @@ class VAE(_nn.Module):
     
     def calc_scg_cos_dist(
         self,
-        last_global_mu, # new param: Last epoch mu - mu of all points # really need?
+        # last_global_mu, # new param: Last epoch mu - mu of all points # really need?
         mu, # for this minibatch
         indices,
         contig_to_scgs,
@@ -505,7 +505,7 @@ class VAE(_nn.Module):
 
         if logfile is not None:
             print(
-                "\tTime: {}\tEpoch: {:>3}  Loss: {:.5e}  CE: {:.5e}  AB: {:.5e}  SSE: {:.5e}  KLD: {:.5e}  Batchsize: {}".format(
+                "\tTime: {}\tEpoch: {:>3}  Loss: {:.5e}  CE: {:.5e}  AB: {:.5e}  SSE: {:.5e}  KLD: {:.5e}  SCGloss:{:.5e}  Batchsize: {}".format(
                     datetime.datetime.now().strftime("%H:%M:%S"),
                     epoch + 1,
                     epoch_loss / len(data_loader),
