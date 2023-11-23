@@ -413,8 +413,10 @@ class VAE(_nn.Module):
 
         for i in range(len(indices)):
             for j in range(len(indices)):
-                shared_scgs_mask[i, j] = len(contig_to_scgs[indices[i]].intersection(contig_to_scgs[indices[j]])) > 0
-
+                scgs_i = set(contig_to_scgs[indices[i]])
+                scgs_j = set(contig_to_scgs[indices[j]])
+                shared_scgs_mask[i, j] = len(scgs_i.intersection(scgs_j)) > 0
+                
         contig_to_sample_tensor = _torch.tensor(contig_to_sample)
         same_sample_mask = contig_to_sample_tensor.unsqueeze(1) == contig_to_sample_tensor
 
