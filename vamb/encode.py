@@ -417,11 +417,11 @@ class VAE(_nn.Module):
         for i in range(len(indices)):
             for j in range(len(contig_to_sample)):
                 scgs_i = set(contig_to_scgs[indices[i]])
-                scgs_j = set(contig_to_scgs[indices[j]])
+                scgs_j = set(contig_to_scgs[j])
                 shared_scgs_mask[i, j] = len(scgs_i.intersection(scgs_j)) > 0
 
                 sample_i = contig_to_sample[indices[i]]
-                sample_j = contig_to_sample[indices[j]]
+                sample_j = contig_to_sample[j]
                 same_sample_mask[i, j] = sample_i == sample_j
 
         combined_mask = shared_scgs_mask & same_sample_mask
