@@ -496,7 +496,7 @@ class VAE(_nn.Module):
             
             cos_dist_batch.append(Nearest_dist)
         
-            cos_dist_batch = _torch.cat(cos_dist_batch)
+        cos_dist_batch = _torch.cat(cos_dist_batch)
 
         return cos_dist_batch
 
