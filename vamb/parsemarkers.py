@@ -213,7 +213,7 @@ class Markers:
         scg_to_contigs = [None] * 256 # 256 is the maximum number of markers (scgs)
 
         for contig_id, marker_array in enumerate(markers.markers):
-            if marker_array:
+            if marker_array is not None:
                 contig_to_scgs.append(list(marker_array))
                 for marker in marker_array:
                     scg_to_contigs[marker].append(contig_id)
