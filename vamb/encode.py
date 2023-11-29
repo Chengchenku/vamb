@@ -484,10 +484,13 @@ class VAE(_nn.Module):
                         cos_dist[contig] = dist
 
             # find the nearest neighbor
-            closed_contig_index = min(cos_dist, key=cos_dist.get)
-            if cos_dist[closed_contig_index] < threshold:
-                Nearest_neighbor = last_global_mu[closed_contig_index]
-                Nearest_dist = 1 - _torch.cosine_similarity(mu[i], Nearest_neighbor)
+            if cos_dist:
+                closed_contig_index = min(cos_dist, key=cos_dist.get)
+                if cos_dist[closed_contig_index] < threshold:
+                    Nearest_neighbor = last_global_mu[closed_contig_index]
+                    Nearest_dist = 1 - _torch.cosine_similarity(mu[i], Nearest_neighbor)
+                else:
+                    Nearest_dist = 1 - _torch.cosine_similarity(mu[i], mu[i])
             else:
                 Nearest_dist = 1 - _torch.cosine_similarity(mu[i], mu[i])
             
