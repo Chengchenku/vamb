@@ -210,7 +210,7 @@ class Markers:
         # Use the markers to create two vectors, one mapping contigs to its containing markers, the other mapping scgs to the contigs they are found in
 
         contig_to_scgs = []
-        scg_to_contigs = [None] * 256 # 256 is the maximum number of markers (scgs)
+        scg_to_contigs = [[] for _ in range (256)] # 256 is the maximum number of markers (scgs)
 
         for contig_id, marker_array in enumerate(markers.markers):
             if marker_array is not None:
