@@ -194,14 +194,7 @@ class Markers:
         shutil.rmtree(tmpdir_to_create)
         markers = cls(marker_list, marker_names, refhash)
 
-        # Use the markers to create one dictionary, one mapping contigs to its containing markers
-
-        contig_to_scgs = []
-
-        for marker in markers.markers:
-            contig_to_scgs.append(list(marker) if marker is not None else [])
-
-        # extract the contig names from the FASTA file, store the contig ids in the dictionary with the sample names as keys
+        # extract the contig names from the FASTA file
         
         contig_to_sample = []
 
@@ -214,7 +207,20 @@ class Markers:
                     sample_id_int = int(match.group(1))
                     contig_to_sample.append(sample_id_int)
 
-        return markers, contig_to_scgs, contig_to_sample
+        # Use the markers to create two vectors, one mapping contigs to its containing markers, the other mapping scgs to the contigs they are found in
+
+        contig_to_scgs = []
+        scg_to_contigs = [None] * 256 # 256 is the maximum number of markers (scgs)
+
+        for contig_id, marker_array in enumerate(markers.markers):
+            if marker_array:
+                contig_to_scgs.append(list(marker_array))
+                for marker in marker_array:
+                    scg_to_contigs[marker].append(contig_id)
+            else:
+                contig_to_scgs.append([])
+
+        return markers, contig_to_scgs, scg_to_contigs, contig_to_sample
 
 
 # Some markers have different names, but should be treated as the same SCG.
