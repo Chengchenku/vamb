@@ -550,6 +550,8 @@ class VAE(_nn.Module):
         if epoch in batchsteps:
             data_loader = set_batchsize(data_loader, data_loader.batch_size * 2)
 
+        mus_this_epoch = None
+
         for depths_in, tnf_in, abundance_in, weights, indices in data_loader:
             depths_in.requires_grad = True
             tnf_in.requires_grad = True
@@ -566,11 +568,10 @@ class VAE(_nn.Module):
                 depths_in, tnf_in, abundance_in
             )
 
-            # upgrade the last_global_mu
-            if last_global_mu is None:
-                last_global_mu = mu
+            if mus_this_epoch is None:
+                mus_this_epoch = mu
             else:
-                last_global_mu = _torch.cat((last_global_mu, mu))
+                mus_this_epoch = _torch.cat((mus_this_epoch, mu))
 
             cos_dist = self.calc_scg_cos_dist(
                 last_global_mu,
@@ -620,6 +621,8 @@ class VAE(_nn.Module):
             )
 
             logfile.flush()
+
+        last_global_mu = mus_this_epoch
 
         self.eval()
         return data_loader, last_global_mu
