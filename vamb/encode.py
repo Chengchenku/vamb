@@ -480,19 +480,19 @@ class VAE(_nn.Module):
                 # find the contigs from the same sample
                 for contig in contigs_shared_same_scg:
                     if contig_to_sample[contig] == sample:
-                        dist = 1 - _torch.cosine_similarity(mu[i], last_global_mu[contig])
+                        dist = 1 - _torch.cosine_similarity(mu[i].unsqueeze(0), last_global_mu[contig].unsqueeze(0))
                         cos_dist[contig] = dist
 
             # find the nearest neighbor
             if cos_dist:
                 closed_contig_index = min(cos_dist, key=cos_dist.get)
                 if cos_dist[closed_contig_index] < threshold:
-                    Nearest_neighbor = last_global_mu[closed_contig_index]
-                    Nearest_dist = 1 - _torch.cosine_similarity(mu[i], Nearest_neighbor)
+                    Nearest_neighbor = last_global_mu[closed_contig_index].unsqueeze(0)
+                    Nearest_dist = 1 - _torch.cosine_similarity(mu[i].unsqueeze(0), Nearest_neighbor)
                 else:
-                    Nearest_dist = 1 - _torch.cosine_similarity(mu[i], mu[i])
+                    Nearest_dist = 1 - _torch.cosine_similarity(mu[i].unsqueeze(0), mu[i].unsqueeze(0))
             else:
-                Nearest_dist = 1 - _torch.cosine_similarity(mu[i], mu[i])
+                Nearest_dist = 1 - _torch.cosine_similarity(mu[i].unsqueeze(0), mu[i].unsqueeze(0))
             
             cos_dist_batch.append(Nearest_dist)
         
