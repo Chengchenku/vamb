@@ -536,6 +536,7 @@ class VAE(_nn.Module):
         batchsteps: list[int],
         logfile,
         contig_to_scgs,
+        scg_to_contigs,
         contig_to_sample,
         last_global_mu,
     ) -> _DataLoader[tuple[Tensor, Tensor, Tensor]]:
@@ -579,6 +580,7 @@ class VAE(_nn.Module):
                 mu,
                 indices,
                 contig_to_scgs,
+                scg_to_contigs,
                 contig_to_sample,
                 epoch,
             )
@@ -731,6 +733,7 @@ class VAE(_nn.Module):
         self,
         dataloader: _DataLoader[tuple[Tensor, Tensor, Tensor]],
         contig_to_scgs,
+        scg_to_contigs,
         contig_to_sample,
         nepochs: int = 500,
         lrate: float = 1e-3,
@@ -812,7 +815,7 @@ class VAE(_nn.Module):
 
         for epoch in range(nepochs):
             dataloader, last_global_mu = self.trainepoch(
-                dataloader, epoch, optimizer, sorted(batchsteps_set), logfile, contig_to_scgs, contig_to_sample, last_global_mu
+                dataloader, epoch, optimizer, sorted(batchsteps_set), logfile, contig_to_scgs, scg_to_contigs, contig_to_sample, last_global_mu
             )
 
         # Save weights - Lord forgive me, for I have sinned when catching all exceptions
