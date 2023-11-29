@@ -380,7 +380,7 @@ class VAE(_nn.Module):
             weighted_scgs_loss.mean(),
         )
     
-    def calc_scg_cos_dist(
+    def calc_scg_cos_dist_alter(
         self,
         last_global_mu, # need to find nearest neighbor of all contigs
         mu, # for this minibatch
@@ -447,7 +447,7 @@ class VAE(_nn.Module):
     
     # version 2: use a for loop to compute the nearest neighbor for each contig in the minibatch
 
-    def calc_scg_cos_dist_v2(
+    def calc_scg_cos_dist(
         self,
         last_global_mu, # need to find nearest neighbor of all contigs
         mu, # for this minibatch
@@ -487,9 +487,10 @@ class VAE(_nn.Module):
             closed_contig_index = min(cos_dist, key=cos_dist.get)
             if cos_dist[closed_contig_index] < threshold:
                 Nearest_neighbor = last_global_mu[closed_contig_index]
+                Nearest_dist = 1 - _torch.cosine_similarity(mu[i], Nearest_neighbor)
+            else:
+                Nearest_dist = 1 - _torch.cosine_similarity(mu[i], mu[i])
             
-            Nearest_dist = 1 - _torch.cosine_similarity(mu[i], Nearest_neighbor)
-            Nearest_dist = (Nearest_dist + 1) / 2
             cos_dist_batch.append(Nearest_dist)
         
             cos_dist_batch = _torch.cat(cos_dist_batch)
