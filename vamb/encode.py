@@ -463,7 +463,7 @@ class VAE(_nn.Module):
             return _torch.zeros(len(indices), requires_grad=True)
         
 
-        cos_dist_batch = []
+        cos_dist_batch = 0
         for i in range(len(indices)):
             cos_dist = defaultdict(float)
             Nearest_neighbor = - mu[i]
@@ -490,13 +490,11 @@ class VAE(_nn.Module):
                     Nearest_neighbor = last_global_mu[closed_contig_index].unsqueeze(0)
                     Nearest_dist = 1 - _torch.cosine_similarity(mu[i].unsqueeze(0), Nearest_neighbor)
                 else:
-                    Nearest_dist = 1 - _torch.cosine_similarity(mu[i].unsqueeze(0), mu[i].unsqueeze(0))
+                    Nearest_dist = 0
             else:
-                Nearest_dist = 1 - _torch.cosine_similarity(mu[i].unsqueeze(0), mu[i].unsqueeze(0))
+                Nearest_dist = 0
             
-            cos_dist_batch.append(Nearest_dist)
-        
-        cos_dist_batch = _torch.cat(cos_dist_batch)
+            cos_dist_batch += Nearest_dist
 
         return cos_dist_batch
 
