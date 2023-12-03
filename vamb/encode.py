@@ -44,7 +44,7 @@ def set_batchsize(
         dataset=data_loader.dataset,
         batch_size=batch_size,
         shuffle=not encode,
-        drop_last=not encode,
+        drop_last=encode,
         num_workers=1 if encode else data_loader.num_workers,
         pin_memory=data_loader.pin_memory,
     )
@@ -156,7 +156,7 @@ def make_dataloader(
     dataloader = _DataLoader(
         dataset=dataset,
         batch_size=batchsize,
-        drop_last=True,
+        drop_last=False,
         shuffle=True,
         num_workers=n_workers,
         pin_memory=cuda,
@@ -380,72 +380,6 @@ class VAE(_nn.Module):
             weighted_scgs_loss.mean(),
         )
     
-    def calc_scg_cos_dist_alter(
-        self,
-        last_global_mu, # need to find nearest neighbor of all contigs
-        mu, # for this minibatch
-        indices,
-        contig_to_scgs,
-        contig_to_sample,
-        epoch,
-        threshold = 0.15,
-    ) -> Tensor:
-        # Put all this on CPU
-
-        # If epoch < 10: return 0
-
-        # First you compute a matrix with the position of the nearest neighbor
-        # contig from the same sample, with a shared SCG, for each point in mu (for this batch)
-        # You can use loops and indexing in here
-
-        # THEN: Compute a loss using ONLY vectroized operations (no indicing [], no loops)
-        # otherwise no gradient.
-        # The loss should  be something like: Cosine similarity between mu and the nearest neighbor
-        # starting fromm 1.0 if similarity is 1.0, and going to 0 around 0.15
-
-        cos_dist = _torch.zeros(len(indices), requires_grad=True)
-
-        if epoch < 10:
-            return cos_dist
-        
-        # version 1: use mask to filter out invalid contig pairs
-
-        # create a mask for contigs with shared SCGs and contigs from the same sample
-        shared_scgs_mask = _torch.zeros((len(indices), len(contig_to_sample)), dtype=_torch.bool)
-        same_sample_mask = _torch.zeros((len(indices), len(contig_to_sample)), dtype=_torch.bool)
-
-        for i in range(len(indices)):
-            for j in range(len(contig_to_sample)):
-                scgs_i = set(contig_to_scgs[indices[i]])
-                scgs_j = set(contig_to_scgs[j])
-                shared_scgs_mask[i, j] = len(scgs_i.intersection(scgs_j)) > 0
-
-                sample_i = contig_to_sample[indices[i]]
-                sample_j = contig_to_sample[j]
-                same_sample_mask[i, j] = sample_i == sample_j
-
-        combined_mask = shared_scgs_mask & same_sample_mask
-
-        # Compute cosine similarity matrix
-        norm_mu = mu / _torch.linalg.vector_norm(mu, dim=1, keepdim=True)
-        norm_last_global_mu = last_global_mu / _torch.linalg.vector_norm(last_global_mu, dim=1, keepdim=True)
-        cos_sim_matrix = _torch.mm(norm_mu, norm_last_global_mu.T)
-
-        # excluding invalid contig pairs and itself
-        cos_sim_matrix[~combined_mask] = 0
-        for i, index in enumerate(indices):
-            cos_sim_matrix[i, index] = 0
-
-        max_sim, _ = cos_sim_matrix.max(dim=1)
-
-        # transform cosine similarity to 0-1 range
-        max_sim = (max_sim + 1) / 2
-        cos_dist = 1 - max_sim 
-        cos_dist[cos_dist > threshold] = 0
-
-        return cos_dist
-    
-    # version 2: use a for loop to compute the nearest neighbor for each contig in the minibatch
 
     def calc_scg_cos_dist(
         self,
@@ -463,10 +397,14 @@ class VAE(_nn.Module):
             return _torch.zeros(len(indices), requires_grad=True)
         
 
-        cos_dist_batch = 0
+        cos_dist_batch = _torch.zeros(len(indices), requires_grad=True)
+
+        neighbor_mu_batch = - mu
+        neighbor_mu_batch = neighbor_mu_batch.detach()
+
         for i in range(len(indices)):
             cos_dist = defaultdict(float)
-            Nearest_neighbor = - mu[i]
+            Nearest_neighbor = None
             scgs = contig_to_scgs[indices[i]]
             sample = contig_to_sample[indices[i]]
 
@@ -482,52 +420,28 @@ class VAE(_nn.Module):
                     if contig_to_sample[contig] == sample:
                         dist = 1 - _torch.cosine_similarity(mu[i].unsqueeze(0), last_global_mu[contig].unsqueeze(0))
                         cos_dist[contig] = dist
+            
 
             # find the nearest neighbor
             if cos_dist:
                 closed_contig_index = min(cos_dist, key=cos_dist.get)
                 if cos_dist[closed_contig_index] < threshold:
                     Nearest_neighbor = last_global_mu[closed_contig_index].unsqueeze(0)
-                    Nearest_dist = 1 - _torch.cosine_similarity(mu[i].unsqueeze(0), Nearest_neighbor)
                 else:
-                    Nearest_dist = 0
-            else:
-                Nearest_dist = 0
+                    Nearest_neighbor = - mu[i].unsqueeze(0)
             
-            cos_dist_batch += Nearest_dist
+            if Nearest_neighbor is not None:
+                neighbor_mu_batch[i] = Nearest_neighbor
+            else:
+                neighbor_mu_batch[i] = -mu[i].unsqueeze(0)
+            
+        cos_dist_batch = 1 - _torch.cosine_similarity(mu, neighbor_mu_batch.detach())
+
+        cos_dist_batch = cos_dist_batch / 2
+        cos_dist_batch[cos_dist_batch > threshold] = threshold
+        cos_dist_batch = threshold - cos_dist_batch
 
         return cos_dist_batch
-
-
-# SCG_indices = [
-#     None (contig 1 has no SCGs)
-#     [indices of all contigs sharing a SCG, and in the same sample
-#     ... # contig 2 from sample X has two SCGs
-# ]
-
-# COSINE_RADIUS = 0.15
-# When training
-
-# # The following block has NO gradient and cannot be used to optimize anything
-# in batch you have contig B
-# P = -B # position in latent space
-# cos_distance = 1
-# v = SCG_indices[B]
-# if v is not None: # skipped if SCG_indices[B] is None
-#     M = latent[I] # matrix vector op
-#     distances = cos_distance(B, M) # vector matrix operation
-#     closest_index = argmin(distances)
-#     closest_distance = distances[closest_index]
-#     if cos_distance < COSINE_RADIUS:
-#         P = M[closest_index]
-# # handle if SCG_indices[B] is empty, which means D is still inf
-
-# # Here, we have gradient
-# # compute mu, and loss
-# loss += COSINE_RADIUS - cos_similarity(B, P) # vector vector operation
-
-# # When done, update the latent matrix with the new mu
-
 
     def trainepoch(
         self,
@@ -553,7 +467,14 @@ class VAE(_nn.Module):
         if epoch in batchsteps:
             data_loader = set_batchsize(data_loader, data_loader.batch_size * 2)
 
-        mus_this_epoch = None
+        mus_this_epoch = list()
+        indices_all = data_loader.dataset.tensors[-1]
+
+        if last_global_mu is not None:
+            last_global_mu = last_global_mu.detach()
+            last_global_mu = last_global_mu / _torch.linalg.vector_norm(last_global_mu, dim=1, keepdim=True)
+
+        counts_close_pairs = 0
 
         for depths_in, tnf_in, abundance_in, weights, indices in data_loader:
             depths_in.requires_grad = True
@@ -571,13 +492,10 @@ class VAE(_nn.Module):
                 depths_in, tnf_in, abundance_in
             )
 
-            if mus_this_epoch is None:
-                mus_this_epoch = mu
-            else:
-                mus_this_epoch = _torch.cat((mus_this_epoch, mu))
+            mus_this_epoch.append(mu)
 
             cos_dist = self.calc_scg_cos_dist(
-                last_global_mu,
+                last_global_mu, # normilized last_global_mu
                 mu,
                 indices,
                 contig_to_scgs,
@@ -585,6 +503,8 @@ class VAE(_nn.Module):
                 contig_to_sample,
                 epoch,
             )
+
+            counts_close_pairs += (cos_dist > 0).sum().item()
 
             loss, ab_sse, ce, sse, kld, scgs_loss = self.calc_loss(
                 depths_in,
@@ -610,7 +530,7 @@ class VAE(_nn.Module):
 
         if logfile is not None:
             print(
-                "\tTime: {}\tEpoch: {:>3}  Loss: {:.5e}  CE: {:.5e}  AB: {:.5e}  SSE: {:.5e}  KLD: {:.5e}  SCGloss:{:.5e}  Batchsize: {}".format(
+                "\tTime: {}\tEpoch: {:>3}  Loss: {:.5e}  CE: {:.5e}  AB: {:.5e}  SSE: {:.5e}  KLD: {:.5e}  SCGloss: {:.5e}  Batchsize: {} Closepairs: {}".format(
                     datetime.datetime.now().strftime("%H:%M:%S"),
                     epoch + 1,
                     epoch_loss / len(data_loader),
@@ -620,13 +540,17 @@ class VAE(_nn.Module):
                     epoch_kldloss / len(data_loader),
                     epoch_scgloss / len(data_loader),
                     data_loader.batch_size,
+                    counts_close_pairs,
                 ),
                 file=logfile,
             )
 
             logfile.flush()
+        
+        last_global_mu = _torch.cat(mus_this_epoch)
 
-        last_global_mu = mus_this_epoch
+        # according the indices_all, reorder the last_global_mu
+        last_global_mu = last_global_mu[indices_all]
 
         self.eval()
         return data_loader, last_global_mu
@@ -645,7 +569,7 @@ class VAE(_nn.Module):
             data_loader, data_loader.batch_size, encode=True
         )
 
-        depths_array, _, _, _ = data_loader.dataset.tensors
+        depths_array, _, _, _, _ = data_loader.dataset.tensors
         length = len(depths_array)
 
         # We make a Numpy array instead of a Torch array because, if we create
@@ -655,7 +579,7 @@ class VAE(_nn.Module):
 
         row = 0
         with _torch.no_grad():
-            for depths, tnf, ab, _ in new_data_loader:
+            for depths, tnf, ab, _, _ in new_data_loader:
                 # Move input to GPU if requested
                 if self.usecuda:
                     depths = depths.cuda()
