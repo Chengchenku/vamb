@@ -411,6 +411,31 @@ class VambOptions:
         self.seed = seed
         self.cuda = cuda
 
+class MarkerOptions:
+    __slots__ = [
+        "contigs_path",
+        "hmm_path",
+        "n_processes",
+        "tmpdir",
+    ]
+    def __init__(
+            self,
+            contigs_path: Path,
+            hmm_path: Path,
+    ):
+        assert isinstance(contigs_path, Path)
+        assert isinstance(hmm_path, Path)
+
+        if not contigs_path.exists():
+            raise FileExistsError(contigs_path)
+        self.contigs_path = contigs_path
+
+        if not hmm_path.exists():
+            raise FileExistsError(hmm_path)
+        self.hmm_path = hmm_path
+
+        self.n_processes = 10
+        self.tmpdir = "/home/projects/ku_00197/people/chench/gene_pred/scgtest/tmp"
 
 def log(string: str, logfile: IO[str], indent: int = 0):
     print(("\t" * indent) + string, file=logfile)
@@ -518,6 +543,7 @@ def trainvae(
     data_loader: DataLoader,
     logfile: IO[str],
     contig_to_scgs,
+    scg_to_contigs,
     contig_to_sample,
 ) -> np.ndarray:
     begintime = time.time()
@@ -541,7 +567,8 @@ def trainvae(
     vae.trainmodel(
         vamb.encode.set_batchsize(data_loader, training_options.batchsize),
         contig_to_scgs = contig_to_scgs,
-        contig_to_sample= contig_to_sample,
+        scg_to_contigs = scg_to_contigs,
+        contig_to_sample = contig_to_sample,
         nepochs=training_options.nepochs,
         lrate=lrate,
         batchsteps=training_options.batchsteps,
@@ -746,6 +773,7 @@ def run(
     encoder_options: EncoderOptions,
     training_options: TrainingOptions,
     cluster_options: ClusterOptions,
+    marker_options: MarkerOptions,
     logfile: IO[str],
 ):
     vae_options = encoder_options.vae_options
@@ -776,6 +804,10 @@ def run(
         1,
     )
 
+    # gererate contig to scgs and contig to sample
+    markers, contig_to_scgs, scg_to_contigs, contig_to_sample = vamb.parsemarkers.Markers.from_files \
+    (marker_options.contigs_path, marker_options.hmm_path, marker_options.tmpdir, 10, None, None)
+
     data_loader = vamb.encode.make_dataloader(
         abundance.matrix,
         composition.matrix,
@@ -797,6 +829,9 @@ def run(
             alpha=encoder_options.alpha,
             data_loader=data_loader,
             logfile=logfile,
+            contig_to_scgs=contig_to_scgs,
+            scg_to_contigs=scg_to_contigs,
+            contig_to_sample=contig_to_sample,
         )
         print("", file=logfile)
 
@@ -1021,6 +1056,25 @@ def main():
         dest="abundancepath",
         type=Path,
         help="path to .npz of RPKM (abundances)",
+    )
+
+    # Marker Gene arguments
+    markeros = parser.add_argument_group(
+        title="Marker Gene input: contigs and hmm file"
+    )
+    markeros.add_argument(
+        "--contigs",
+        dest="contigs_path",
+        metavar="",
+        type=Path,
+        help="path to contigs fasta file",
+    )
+    markeros.add_argument(
+        "--hmm",
+        dest="hmm_path",
+        metavar="",
+        type=Path,
+        help="path to hmm file",
     )
 
     # Optional arguments
@@ -1306,6 +1360,11 @@ def main():
         not args.norefcheck,
     )
 
+    marker_options = MarkerOptions(
+        args.contigs_path,
+        args.hmm_path,
+    )
+
     if args.model in ("vae", "vae-aae"):
         vae_options = VAEOptions(
             nhiddens=args.nhiddens,
@@ -1411,6 +1470,7 @@ def main():
             encoder_options=encoder_options,
             training_options=training_options,
             cluster_options=cluster_options,
+            marker_options=marker_options,
             logfile=logfile,
         )
 

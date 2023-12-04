@@ -127,7 +127,7 @@ class Markers:
         tmpdir_to_create: Path,
         n_processes: int,
         fasta_entry_mask: Sequence[bool],
-        target_refhash: Optional[bytes],
+        target_refhash: Optional[bytes] = None,
     ):
         """
         Create the Markers from input files:
