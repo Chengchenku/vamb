@@ -170,8 +170,8 @@ class VAEOptions:
             raise argparse.ArgumentTypeError("beta cannot be negative or zero")
         self.beta = beta
 
-        if gamma <= 0 or not isfinite(gamma):
-            raise argparse.ArgumentTypeError("gamma cannot be negative or zero")
+        if gamma < 0 or not isfinite(gamma):
+            raise argparse.ArgumentTypeError("gamma cannot be negative")
         self.gamma = gamma
 
         if dropout is not None and (dropout < 0 or dropout >= 1):
