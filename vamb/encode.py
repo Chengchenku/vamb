@@ -44,7 +44,7 @@ def set_batchsize(
         dataset=data_loader.dataset,
         batch_size=batch_size,
         shuffle=not encode,
-        drop_last=encode,
+        drop_last=False,
         num_workers=1 if encode else data_loader.num_workers,
         pin_memory=data_loader.pin_memory,
     )
@@ -593,7 +593,7 @@ class VAE(_nn.Module):
 
                 latent[row : row + len(mu)] = mu
                 row += len(mu)
-
+                
         assert row == length
         return latent
 
