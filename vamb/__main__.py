@@ -811,8 +811,10 @@ def run(
     )
 
     # gererate contig to scgs and contig to sample
+    mask = vamb.vambtools.read_npz(marker_options.mask_path)
+
     markers, contig_to_scgs, scg_to_contigs, contig_to_sample = vamb.parsemarkers.Markers.from_files \
-    (marker_options.contigs_path, marker_options.hmm_path, marker_options.tmpdir, 10, marker_options.mask_path, None)
+    (marker_options.contigs_path, marker_options.hmm_path, marker_options.tmpdir, 10, mask, None)
 
     data_loader = vamb.encode.make_dataloader(
         abundance.matrix,
