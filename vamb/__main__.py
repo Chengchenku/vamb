@@ -417,7 +417,6 @@ class MarkerOptions:
         "hmm_path",
         "mask_path",
         "n_processes",
-        "tmpdir",
     ]
     def __init__(
             self,
@@ -441,7 +440,6 @@ class MarkerOptions:
         self.mask_path = mask_path
 
         self.n_processes = 10
-        self.tmpdir = Path("/home/projects/ku_00197/people/chench/gene_pred/scgtest/tmp")
 
 def log(string: str, logfile: IO[str], indent: int = 0):
     print(("\t" * indent) + string, file=logfile)
@@ -812,9 +810,10 @@ def run(
 
     # gererate contig to scgs and contig to sample
     mask = vamb.vambtools.read_npz(marker_options.mask_path)
+    tmpdir = vamb_options.out_dir.joinpath("tmp")
 
     markers, contig_to_scgs, scg_to_contigs, contig_to_sample = vamb.parsemarkers.Markers.from_files \
-    (marker_options.contigs_path, marker_options.hmm_path, marker_options.tmpdir, 10, mask, None)
+    (marker_options.contigs_path, marker_options.hmm_path, tmpdir, 10, mask, None)
 
     data_loader = vamb.encode.make_dataloader(
         abundance.matrix,
