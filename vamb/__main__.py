@@ -139,19 +139,21 @@ class AbundanceOptions:
 
 
 class VAEOptions:
-    __slots__ = ["nhiddens", "nlatent", "beta", "dropout"]
+    __slots__ = ["nhiddens", "nlatent", "beta", "gamma", "dropout"]
 
     def __init__(
         self,
         nhiddens: Optional[list[int]],
         nlatent: int,
         beta: float,
+        gamma: float,
         dropout: Optional[float],
     ):
         assert isinstance(nhiddens, (list, type(None)))
         assert isinstance(nlatent, int)
 
         assert isinstance(beta, float)
+        assert isinstance(gamma, float)
         assert isinstance(dropout, (float, type(None)))
 
         if nhiddens is not None and any(i < 1 for i in nhiddens):
@@ -167,6 +169,10 @@ class VAEOptions:
         if beta <= 0 or not isfinite(beta):
             raise argparse.ArgumentTypeError("beta cannot be negative or zero")
         self.beta = beta
+
+        if gamma <= 0 or not isfinite(gamma):
+            raise argparse.ArgumentTypeError("gamma cannot be negative or zero")
+        self.gamma = gamma
 
         if dropout is not None and (dropout < 0 or dropout >= 1):
             raise argparse.ArgumentTypeError("dropout must be in 0 <= d < 1")
@@ -524,6 +530,7 @@ def trainvae(
         nlatent=vae_options.nlatent,
         alpha=alpha,
         beta=vae_options.beta,
+        gamma=vae_options.gamma,
         dropout=vae_options.dropout,
         cuda=vamb_options.cuda,
         seed=vamb_options.seed,
@@ -1111,6 +1118,14 @@ def main():
         help="beta, capacity to learn [200.0]",
     )
     vaeos.add_argument(
+        "-g",
+        dest="gamma",
+        metavar="",
+        type=float,
+        default=0.5,
+        help="gamma, weight of SCG loss [0.5]",
+    )
+    vaeos.add_argument(
         "-d",
         dest="dropout",
         metavar="",
@@ -1296,6 +1311,7 @@ def main():
             nhiddens=args.nhiddens,
             nlatent=args.nlatent,
             beta=args.beta,
+            gamma=args.gamma,
             dropout=args.dropout,
         )
 
