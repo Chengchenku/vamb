@@ -415,6 +415,7 @@ class MarkerOptions:
     __slots__ = [
         "contigs_path",
         "hmm_path",
+        "mask_path",
         "n_processes",
         "tmpdir",
     ]
@@ -422,6 +423,7 @@ class MarkerOptions:
             self,
             contigs_path: Path,
             hmm_path: Path,
+            mask_path: Path,
     ):
         assert isinstance(contigs_path, Path)
         assert isinstance(hmm_path, Path)
@@ -433,6 +435,10 @@ class MarkerOptions:
         if not hmm_path.exists():
             raise FileExistsError(hmm_path)
         self.hmm_path = hmm_path
+
+        if not mask_path.exists():
+            raise FileExistsError(mask_path)
+        self.mask_path = mask_path
 
         self.n_processes = 10
         self.tmpdir = Path("/home/projects/ku_00197/people/chench/gene_pred/scgtest/tmp")
@@ -806,7 +812,7 @@ def run(
 
     # gererate contig to scgs and contig to sample
     markers, contig_to_scgs, scg_to_contigs, contig_to_sample = vamb.parsemarkers.Markers.from_files \
-    (marker_options.contigs_path, marker_options.hmm_path, marker_options.tmpdir, 10, None, None)
+    (marker_options.contigs_path, marker_options.hmm_path, marker_options.tmpdir, 10, marker_options.mask_path, None)
 
     data_loader = vamb.encode.make_dataloader(
         abundance.matrix,
@@ -1075,6 +1081,13 @@ def main():
         metavar="",
         type=Path,
         help="path to hmm file",
+    )
+    markeros.add_argument(
+        "--mask",
+        dest="mask_path",
+        metavar="",
+        type=Path,
+        help="path to mask file",
     )
 
     # Optional arguments
@@ -1363,6 +1376,7 @@ def main():
     marker_options = MarkerOptions(
         args.contigs_path,
         args.hmm_path,
+        args.mask_path,
     )
 
     if args.model in ("vae", "vae-aae"):
