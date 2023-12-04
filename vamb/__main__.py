@@ -435,7 +435,7 @@ class MarkerOptions:
         self.hmm_path = hmm_path
 
         self.n_processes = 10
-        self.tmpdir = "/home/projects/ku_00197/people/chench/gene_pred/scgtest/tmp"
+        self.tmpdir = Path("/home/projects/ku_00197/people/chench/gene_pred/scgtest/tmp")
 
 def log(string: str, logfile: IO[str], indent: int = 0):
     print(("\t" * indent) + string, file=logfile)
