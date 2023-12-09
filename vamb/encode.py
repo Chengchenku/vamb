@@ -396,13 +396,12 @@ class VAE(_nn.Module):
         if epoch < 10:
             return _torch.zeros(len(indices), requires_grad=True)
 
-        neighbor_mu_batch = - mu
-        neighbor_mu_batch = neighbor_mu_batch.detach()
+        neighbor_mu_batch = - mu.clone().detach()
 
         # Precompute the normalized mu, look at the normalization in cluster.py
 
         for i in range(len(indices)):
-            cos_dist = defaultdict(float) # This doesn't need to be a dict. can be a float
+            min_cos_dist = float('inf') # This doesn't need to be a dict. can be a float
             Nearest_neighbor = None
             scgs = contig_to_scgs[indices[i]]
             sample = contig_to_sample[indices[i]]
@@ -414,26 +413,24 @@ class VAE(_nn.Module):
             # Precompute last global mu - dont even do it here, do it when storing it
 
             for scg in scgs:
-                # find the contigs that share this SCG
-                contigs_shared_same_scg = scg_to_contigs[scg] # Get here a list of only the SCGs from that sample
+                # find the contigs that share this SCG and from the sam sample
+                contigs_shared_same_scg = [contig for contig in scg_to_contigs[scg] if contig_to_sample[contig] == sample]
 
-                # find the contigs from the same sample
                 for contig in contigs_shared_same_scg:
-                    if contig_to_sample[contig] == sample:
-                        # If both last_global_mu and mu are normalized, dist is just 0.5 - _torch.dot(mu[i], last_global_mu[contig])
-                        dist = 1 - _torch.cosine_similarity(mu[i].unsqueeze(0), last_global_mu[contig].unsqueeze(0))
-                        # cos_dist = min(cos_dist, dist)
-                        # update the index of the closest neighbor
-                        cos_dist[contig] = dist
+                    # If both last_global_mu and mu are normalized, dist is just 0.5 - _torch.dot(mu[i], last_global_mu[contig])
+                    dist = 1 - _torch.cosine_similarity(mu[i].unsqueeze(0), last_global_mu[contig].unsqueeze(0))
+                    # cos_dist = min(cos_dist, dist)
+                    # update the index of the closest neighbor
+                    if dist < min_cos_dist:
+                        min_cos_dist = dist
+                        Nearest_neighbor_index = contig
             
 
             # find the nearest neighbor
-            if cos_dist:
-                closed_contig_index = min(cos_dist, key=cos_dist.get)
-                if cos_dist[closed_contig_index] < threshold:
-                    Nearest_neighbor = last_global_mu[closed_contig_index].unsqueeze(0)
-                else:
-                    Nearest_neighbor = - mu[i].unsqueeze(0)
+            if min_cos_dist < threshold:
+                Nearest_neighbor = last_global_mu[Nearest_neighbor_index].unsqueeze(0)
+            else:
+                Nearest_neighbor = - mu[i].unsqueeze(0)
             
             if Nearest_neighbor is not None:
                 neighbor_mu_batch[i] = Nearest_neighbor
@@ -476,7 +473,6 @@ class VAE(_nn.Module):
 
         if last_global_mu is not None:
             last_global_mu = last_global_mu.detach()
-            last_global_mu = last_global_mu / _torch.linalg.vector_norm(last_global_mu, dim=1, keepdim=True)
 
         counts_close_pairs = 0
 
@@ -499,7 +495,7 @@ class VAE(_nn.Module):
             mus_this_epoch.append(mu)
 
             cos_dist = self.calc_scg_cos_dist(
-                last_global_mu, # normilized last_global_mu
+                last_global_mu,
                 mu,
                 indices,
                 contig_to_scgs,
