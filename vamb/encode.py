@@ -395,15 +395,14 @@ class VAE(_nn.Module):
         
         if epoch < 10:
             return _torch.zeros(len(indices), requires_grad=True)
-        
-
-        cos_dist_batch = _torch.zeros(len(indices), requires_grad=True)
 
         neighbor_mu_batch = - mu
         neighbor_mu_batch = neighbor_mu_batch.detach()
 
+        # Precompute the normalized mu, look at the normalization in cluster.py
+
         for i in range(len(indices)):
-            cos_dist = defaultdict(float)
+            cos_dist = defaultdict(float) # This doesn't need to be a dict. can be a float
             Nearest_neighbor = None
             scgs = contig_to_scgs[indices[i]]
             sample = contig_to_sample[indices[i]]
@@ -411,14 +410,20 @@ class VAE(_nn.Module):
             if scgs is None:
                 continue
 
+            # mu[i].unsqueeze(0),
+            # Precompute last global mu - dont even do it here, do it when storing it
+
             for scg in scgs:
                 # find the contigs that share this SCG
-                contigs_shared_same_scg = scg_to_contigs[scg]
+                contigs_shared_same_scg = scg_to_contigs[scg] # Get here a list of only the SCGs from that sample
 
                 # find the contigs from the same sample
                 for contig in contigs_shared_same_scg:
                     if contig_to_sample[contig] == sample:
+                        # If both last_global_mu and mu are normalized, dist is just 0.5 - _torch.dot(mu[i], last_global_mu[contig])
                         dist = 1 - _torch.cosine_similarity(mu[i].unsqueeze(0), last_global_mu[contig].unsqueeze(0))
+                        # cos_dist = min(cos_dist, dist)
+                        # update the index of the closest neighbor
                         cos_dist[contig] = dist
             
 
@@ -434,12 +439,11 @@ class VAE(_nn.Module):
                 neighbor_mu_batch[i] = Nearest_neighbor
             else:
                 neighbor_mu_batch[i] = -mu[i].unsqueeze(0)
-            
+        
         cos_dist_batch = 1 - _torch.cosine_similarity(mu, neighbor_mu_batch.detach())
 
         cos_dist_batch = cos_dist_batch / 2
-        cos_dist_batch[cos_dist_batch > threshold] = threshold
-        cos_dist_batch = threshold - cos_dist_batch
+        cos_dist_batch = threshold - _torch.min(cos_dist_batch, _torch.tensor([threshold]))
 
         return cos_dist_batch
 
