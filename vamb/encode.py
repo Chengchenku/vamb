@@ -380,8 +380,52 @@ class VAE(_nn.Module):
             weighted_scgs_loss.mean(),
         )
     
-
     def calc_scg_cos_dist(
+        self,
+        last_global_mu, # need to find nearest neighbor of all contigs
+        mu, # for this minibatch
+        indices,
+        scg_presence_matrix,
+        sample_tensor,
+        epoch,
+        threshold = 0.15,
+    ) -> Tensor:
+        cos_dist_batch = _torch.zeros(len(indices), requires_grad=True)
+
+
+        if epoch < 10:
+            return cos_dist_batch
+
+        # Compute shared SCGs mask using matrix operations
+        scgs_i = scg_presence_matrix[indices]
+        scgs_j = scg_presence_matrix
+        shared_scgs_mask = _torch.mm(scgs_i.float(), scgs_j.T.float()) > 0
+
+        # Compute same sample mask
+        sample_i = sample_tensor[indices]
+        sample_j = sample_tensor
+        same_sample_mask = sample_i[:, None] == sample_j
+
+        # Combine masks and exclude self-pairs
+        combined_mask = shared_scgs_mask & same_sample_mask
+        combined_mask[_torch.arange(len(indices)), indices] = 0
+
+        # Compute cosine similarity matrix
+        norm_mu = mu / _torch.linalg.vector_norm(mu, dim=1, keepdim=True)
+        cos_sim_matrix = _torch.mm(norm_mu, last_global_mu.T)
+
+        cos_sim_matrix[~combined_mask] = 0
+
+        cos_sim_max, _ = cos_sim_matrix.max(dim=1)
+
+        cos_sim_max = (1 - cos_sim_max) / 2
+
+        cos_sim_max[cos_sim_max > threshold] = threshold
+        cos_dist_batch = threshold - cos_sim_max
+
+        return cos_dist_batch
+    
+    def calc_scg_cos_dist_alter(
         self,
         last_global_mu, # need to find nearest neighbor of all contigs
         mu, # for this minibatch
@@ -473,6 +517,16 @@ class VAE(_nn.Module):
 
         if last_global_mu is not None:
             last_global_mu = last_global_mu.detach()
+            # normalize the last_global_mu
+            last_global_mu = last_global_mu / _torch.linalg.vector_norm(last_global_mu, dim=1, keepdim=True)
+
+        # calculate the scg presence matrix and same sample tensor
+        scg_presence_matrix = _torch.zeros((len(contig_to_scgs), 256), dtype=_torch.bool)
+        for i, scgs in enumerate(contig_to_scgs):
+            for scg in scgs:
+                scg_presence_matrix[i, scg] = 1
+
+        sample_tensor = _torch.tensor(contig_to_sample, dtype=_torch.long)
 
         counts_close_pairs = 0
 
@@ -498,9 +552,8 @@ class VAE(_nn.Module):
                 last_global_mu,
                 mu,
                 indices,
-                contig_to_scgs,
-                scg_to_contigs,
-                contig_to_sample,
+                scg_presence_matrix,
+                sample_tensor,
                 epoch,
             )
 
