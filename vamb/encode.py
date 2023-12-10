@@ -414,15 +414,15 @@ class VAE(_nn.Module):
         norm_mu = mu / _torch.linalg.vector_norm(mu, dim=1, keepdim=True)
         cos_sim_matrix = _torch.mm(norm_mu, last_global_mu.T)
 
-        cos_sim_matrix[~combined_mask] = 0
+        cos_dist_matrix = (1 - cos_sim_matrix) / 2
 
-        cos_sim_max, _ = cos_sim_matrix.max(dim=1)
+        cos_dist_matrix[~combined_mask] = threshold
 
-        cos_sim_max = (1 - cos_sim_max) / 2
+        close_pairs_mask = cos_dist_matrix < threshold
+        cos_dist_matrix[~close_pairs_mask] = threshold
 
-        cos_sim_max[cos_sim_max > threshold] = threshold
-        cos_dist_batch = threshold - cos_sim_max
-
+        cos_dist_batch = threshold - cos_dist_matrix
+        cos_dist_batch = _torch.sum(cos_dist_batch, dim=1)
         return cos_dist_batch
     
     def calc_scg_cos_dist_alter(
