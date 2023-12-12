@@ -380,7 +380,7 @@ class VAE(_nn.Module):
             weighted_scgs_loss.mean(),
         )
     
-    def calc_scg_cos_dist(
+    def calc_scg_cos_dist_alter(
         self,
         last_global_mu, # need to find nearest neighbor of all contigs
         mu, # for this minibatch
@@ -414,18 +414,17 @@ class VAE(_nn.Module):
         norm_mu = mu / _torch.linalg.vector_norm(mu, dim=1, keepdim=True)
         cos_sim_matrix = _torch.mm(norm_mu, last_global_mu.T)
 
-        cos_dist_matrix = (1 - cos_sim_matrix) / 2
+        cos_sim_matrix[~combined_mask] = 0
 
-        cos_dist_matrix[~combined_mask] = threshold
+        cos_sim_max, _ = cos_sim_matrix.max(dim=1)
 
-        close_pairs_mask = cos_dist_matrix < threshold
-        cos_dist_matrix[~close_pairs_mask] = threshold
+        cos_sim_max = (1 - cos_sim_max) / 2
+        cos_sim_max[cos_sim_max > threshold] = threshold
+        cos_dist_batch = threshold - cos_sim_max
 
-        cos_dist_batch = threshold - cos_dist_matrix
-        cos_dist_batch = _torch.sum(cos_dist_batch, dim=1)
         return cos_dist_batch
     
-    def calc_scg_cos_dist_alter(
+    def calc_scg_cos_dist(
         self,
         last_global_mu, # need to find nearest neighbor of all contigs
         mu, # for this minibatch
@@ -443,6 +442,7 @@ class VAE(_nn.Module):
         neighbor_mu_batch = - mu.clone().detach()
 
         # Precompute the normalized mu, look at the normalization in cluster.py
+        norm_mu = mu / mu.norm(dim=1).reshape(-1, 1) * (2**0.5)
 
         for i in range(len(indices)):
             min_cos_dist = float('inf') # This doesn't need to be a dict. can be a float
@@ -453,8 +453,6 @@ class VAE(_nn.Module):
             if scgs is None:
                 continue
 
-            # mu[i].unsqueeze(0),
-            # Precompute last global mu - dont even do it here, do it when storing it
 
             for scg in scgs:
                 # find the contigs that share this SCG and from the sam sample
@@ -462,7 +460,7 @@ class VAE(_nn.Module):
 
                 for contig in contigs_shared_same_scg:
                     # If both last_global_mu and mu are normalized, dist is just 0.5 - _torch.dot(mu[i], last_global_mu[contig])
-                    dist = 1 - _torch.cosine_similarity(mu[i].unsqueeze(0), last_global_mu[contig].unsqueeze(0))
+                    dist = 0.5 - _torch.dot(norm_mu[i], last_global_mu[contig])
                     # cos_dist = min(cos_dist, dist)
                     # update the index of the closest neighbor
                     if dist < min_cos_dist:
@@ -472,19 +470,17 @@ class VAE(_nn.Module):
 
             # find the nearest neighbor
             if min_cos_dist < threshold:
-                Nearest_neighbor = last_global_mu[Nearest_neighbor_index].unsqueeze(0)
+                Nearest_neighbor = last_global_mu[Nearest_neighbor_index]
             else:
-                Nearest_neighbor = - mu[i].unsqueeze(0)
+                Nearest_neighbor = - mu[i]
             
             if Nearest_neighbor is not None:
                 neighbor_mu_batch[i] = Nearest_neighbor
-            else:
-                neighbor_mu_batch[i] = -mu[i].unsqueeze(0)
         
-        cos_dist_batch = 1 - _torch.cosine_similarity(mu, neighbor_mu_batch.detach())
+        cos_dist_batch = (1 - _torch.cosine_similarity(mu, neighbor_mu_batch)) / 2 
 
-        cos_dist_batch = cos_dist_batch / 2
         cos_dist_batch = threshold - _torch.min(cos_dist_batch, _torch.tensor([threshold]))
+        print(cos_dist_batch)
 
         return cos_dist_batch
 
@@ -518,15 +514,15 @@ class VAE(_nn.Module):
         if last_global_mu is not None:
             last_global_mu = last_global_mu.detach()
             # normalize the last_global_mu
-            last_global_mu = last_global_mu / _torch.linalg.vector_norm(last_global_mu, dim=1, keepdim=True)
+            last_global_mu = last_global_mu / last_global_mu.norm(dim=1).reshape(-1, 1) * (2**0.5)
 
-        # calculate the scg presence matrix and same sample tensor
-        scg_presence_matrix = _torch.zeros((len(contig_to_scgs), 256), dtype=_torch.bool)
-        for i, scgs in enumerate(contig_to_scgs):
-            for scg in scgs:
-                scg_presence_matrix[i, scg] = 1
+        # # calculate the scg presence matrix and same sample tensor
+        # scg_presence_matrix = _torch.zeros((len(contig_to_scgs), 256), dtype=_torch.bool)
+        # for i, scgs in enumerate(contig_to_scgs):
+        #     for scg in scgs:
+        #         scg_presence_matrix[i, scg] = 1
 
-        sample_tensor = _torch.tensor(contig_to_sample, dtype=_torch.long)
+        # sample_tensor = _torch.tensor(contig_to_sample, dtype=_torch.long)
 
         counts_close_pairs = 0
 
@@ -552,8 +548,9 @@ class VAE(_nn.Module):
                 last_global_mu,
                 mu,
                 indices,
-                scg_presence_matrix,
-                sample_tensor,
+                contig_to_scgs,
+                scg_to_contigs,
+                contig_to_sample,
                 epoch,
             )
 
