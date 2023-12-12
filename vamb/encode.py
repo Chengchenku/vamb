@@ -480,7 +480,6 @@ class VAE(_nn.Module):
         cos_dist_batch = (1 - _torch.cosine_similarity(mu, neighbor_mu_batch)) / 2 
 
         cos_dist_batch = threshold - _torch.min(cos_dist_batch, _torch.tensor([threshold]))
-        print(cos_dist_batch)
 
         return cos_dist_batch
 
