@@ -445,7 +445,7 @@ class VAE(_nn.Module):
         norm_mu = mu / mu.norm(dim=1).reshape(-1, 1) * (2**0.5)
 
         for i in range(len(indices)):
-            min_cos_dist = float('inf') # This doesn't need to be a dict. can be a float
+            min_cos_dist = float('inf')
             Nearest_neighbor = None
             scgs = contig_to_scgs[indices[i]]
             sample = contig_to_sample[indices[i]]

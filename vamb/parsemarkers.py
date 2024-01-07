@@ -19,6 +19,8 @@ from collections import defaultdict
 import json
 import numpy as np
 import re
+import random
+import json
 
 MarkerID = NewType("Marker", int)
 MarkerName = NewType("MarkerName", str)
@@ -208,20 +210,98 @@ class Markers:
                     contig_to_sample.append(sample_id_int)
 
         # Use the markers to create two vectors, one mapping contigs to its containing markers, the other mapping scgs to the contigs they are found in
+                    
+        # load ref json file
+
+        ref_path = '/home/projects/ku_00197/people/chench/refs+fasta/ref_spades_Airways.json'
+
+        with open(ref_path, 'r') as f:
+            ref = json.load(f)
+        
+        ref_seq_dict = {}
+        for seq in ref['sequences']:
+            ref_seq_dict[seq[0]] = seq[2]
+
+        # load contignames from file contignames.txt
+        contignames = []
+        with open('/home/projects/ku_00197/people/chench/refs+fasta/vambout/contignames', 'r') as f:
+            for line in f:
+                contignames.append(line.strip())
+
+        # map contignames to contig_to_sample
+        contignames_to_sample = {}
+        for i, contig in enumerate(contignames):
+            contignames_to_sample[contig] = contig_to_sample[i]
 
         contig_to_scgs = []
-        scg_to_contigs = [[] for _ in range (256)] # 256 is the maximum number of markers (scgs)
 
         for contig_id, marker_array in enumerate(markers.markers):
             if marker_array is not None:
                 contig_to_scgs.append(list(marker_array))
-                for marker in marker_array:
-                    scg_to_contigs[marker].append(contig_id)
             else:
                 contig_to_scgs.append([])
+        
+        # map contignames to contig_to_scgs
+        contignames_to_scgs = {}
+        for i, contig in enumerate(contignames):
+            contignames_to_scgs[contig] = contig_to_scgs[i]
+
+        # remove shared scgs for contigs from same sample and source
+        for i in range(len(contignames_to_scgs)):
+            for j in range(i + 1, len(contignames_to_scgs)):
+                contig1 = contignames[i]
+                contig2 = contignames[j]
+
+                if contignames_to_sample[contig1] == contignames_to_sample[contig2]:
+                    source1 = set(source[0] for source in ref_seq_dict.get(contig1, []))
+                    source2 = set(source[0] for source in ref_seq_dict.get(contig2, []))
+                    if source1.intersection(source2):
+                        common_scgs = set(contignames_to_scgs[contig1]).intersection(set(contignames_to_scgs[contig2]))
+                        # remove common scgs from the contignames_to_scgs
+                        for scg in common_scgs:
+                            contignames_to_scgs[contig1].remove(scg)
+                            contignames_to_scgs[contig2].remove(scg)
+        
+        # Add Random Number as Fake SCGs to Contigs from Same Sample but Different Sources in the Copy
+        fake_scgs_threshold = len(contignames) * 0.25
+        num_fake_scgs = 0
+        random.seed(0)
+        for contig1 in contignames:
+            # Randomly select other contigs, ensuring contig1 is not included in the selection
+            if num_fake_scgs >= fake_scgs_threshold:
+                break
+
+            selected_contigs = random.sample([c for c in contignames if c != contig1], min(100, len(contignames) - 1))
+
+            for contig2 in selected_contigs:
+                # Check if they are from the same sample but different source
+                if contignames_to_sample[contig1] == contignames_to_sample[contig2]:
+                    source1 = set(source[0] for source in ref_seq_dict.get(contig1, []))
+                    source2 = set(source[0] for source in ref_seq_dict.get(contig2, []))
+                    if not source1.intersection(source2):
+                        fake_scg = 256 + num_fake_scgs
+                        contignames_to_scgs[contig1].append(fake_scg)
+                        contignames_to_scgs[contig2].append(fake_scg)
+
+                        num_fake_scgs += 1
+
+        # transform contignames_to_scgs to contig_to_scgs
+        contig_to_scgs = [scgs for scgs in contignames_to_scgs.values()]
+
+        # Generate scg_to_contigs based on modified_contig_to_scgs
+        max_scg = max(max(scgs, default=0) for scgs in contig_to_scgs)
+        min_scg = min(min(scgs, default=0) for scgs in contig_to_scgs)
+        scg_range = max_scg - min_scg + 1
+
+        scg_to_contigs = [[] for _ in range(scg_range)]
+
+        for contig_id, scgs in enumerate(contig_to_scgs):
+            for scg in scgs:
+                scg_index = scg - min_scg  # Adjusting the index for potential negative SCGs
+                scg_to_contigs[scg_index].append(contig_id) 
 
         return markers, contig_to_scgs, scg_to_contigs, contig_to_sample
-
+    
 
 # Some markers have different names, but should be treated as the same SCG.
 NORMALIZE_MARKER_TRANS_DICT = {
