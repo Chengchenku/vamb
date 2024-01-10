@@ -245,6 +245,22 @@ class Markers:
         contignames_to_scgs = {}
         for i, contig in enumerate(contignames):
             contignames_to_scgs[contig] = contig_to_scgs[i]
+        
+        # map contignames to genomes
+        contigname_to_sources = defaultdict(set)
+        for (seqname, length, sources) in ref["sequences"]:
+            for (sourcename, start, stop) in sources:
+                contigname_to_sources[seqname].add(sourcename)
+            
+        source_to_genome = {}
+        for (genome, flags, sources) in ref["genomes"]:
+            for (sourcename, length) in sources:
+                source_to_genome[sourcename] = genome
+
+        contigname_to_genomes = defaultdict(set)
+        for contigname, sources in contigname_to_sources.items():
+            for source in sources:
+                contigname_to_genomes[contigname].add(source_to_genome[source])
 
         # remove shared scgs for contigs from same sample and source
         for i in range(len(contignames_to_scgs)):
@@ -264,29 +280,27 @@ class Markers:
         
         # Add Random Number as Fake SCGs to Contigs from Same Sample but Different Sources in the Copy
         fake_scgs_threshold = len(contignames) * 0.5
-        num_fake_scgs = 0
         random.seed(0)
         for fake_scg in range(256, 10000):
-            if num_fake_scgs > fake_scgs_threshold:
+
+            selected_contigs = random.sample(contignames, 1000)
+            valid_contigs = []
+
+            for contig in selected_contigs:
+                contig_sample = contignames_to_sample[contig]
+                contig_genome = contigname_to_genomes[contig]
+
+                if not any(contignames_to_sample[v] == contig_sample and 
+                        set(contigname_to_genomes[v]).intersection(contig_genome) 
+                        for v in valid_contigs):
+                        valid_contigs.append(contig)
+
+            for contig in valid_contigs:
+                contignames_to_scgs[contig].append(fake_scg)
+
+            num_contigs_with_1_scg = sum(len(scgs) > 0 for scgs in contignames_to_scgs.values())
+            if num_contigs_with_1_scg >= fake_scgs_threshold:
                 break
-
-            selected_contigs = random.sample(contignames, 100)
-
-            for i in range(len(selected_contigs)):
-                contig1 = selected_contigs[i]
-                valid_contigs = set(selected_contigs)
-
-                for j in range(i + 1, len(selected_contigs)):
-                    contig2 = selected_contigs[j]
-                    if contignames_to_sample[contig1] == contignames_to_sample[contig2]:
-                        source1 = set(source[0] for source in ref_seq_dict.get(contig1, []))
-                        source2 = set(source[0] for source in ref_seq_dict.get(contig2, []))
-                        if source1.intersection(source2):
-                            valid_contigs.remove(contig2)
-
-                for contig in valid_contigs:
-                    contignames_to_scgs[contig].append(fake_scg)
-                    num_fake_scgs += 1
 
         # transform contignames_to_scgs to contig_to_scgs
         contig_to_scgs = [scgs for scgs in contignames_to_scgs.values()]
